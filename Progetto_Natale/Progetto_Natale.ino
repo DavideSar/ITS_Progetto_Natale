@@ -1,4 +1,5 @@
 #include "Arduino_LED_Matrix.h"
+#include "Animazione_Albero.h" // file con i disegni
 
 ArduinoLEDMatrix matrix;
 
@@ -6,18 +7,36 @@ ArduinoLEDMatrix matrix;
 const int micPin = A0;
 const int ledPin = LED_BUILTIN;
 const int sampleWindow = 50; 
+
 // Parametri di calibrazione
 int sogliaSilenzio = 50;        // Valore minimo per ignorare il rumore di fondo
-int sensibilita = 200;          // Oltre questo valore il LED si accende al massimo
-int reference = 100;          // Oltre questo valore il LED si accende al massimo
+int sensibilita = 200;          // Oltre questo valore si raggiunge il livello massimo
+int reference = 100;            // Offset rumore
+
 float logVal;
 
-// Struttura per gestire i frame della matrice
+// Struttura per gestire il frame corrente da inviare alla matrice
 uint8_t frame[8][12]; 
+
+
+// array di puntatori per accedere ai disegni (0-9) definiti nel file .h
+const byte (*livelliAnimazione[10])[12] = {
+  disegno0, // Livello 0 (Silenzio)
+  disegno1, // Livello 1
+  disegno2, 
+  disegno3,
+  disegno4,
+  disegno5,
+  disegno6,
+  disegno7,
+  disegno8,
+  disegno9  // (Massimo volume)
+};
 
 void setup() {
   Serial.begin(115200);
   matrix.begin();
+  pinMode(ledPin, OUTPUT);
 }
 
 void loop() {
@@ -34,57 +53,57 @@ void loop() {
     }
   }
 
-  unsigned int peakToPeak = signalMax - signalMin - reference;
-  if(peakToPeak > 5000)
-    peakToPeak = 0;
+  // Calcolo ampiezza P2P
+  int diff = (int)signalMax - (int)signalMin - reference;
+  if (diff < 0) diff = 0;
+  unsigned int peakToPeak = (unsigned int)diff;
 
+  if(peakToPeak > 5000) peakToPeak = 0;
 
+  // intensità luminosa
   int intensitaLed = map(peakToPeak, sogliaSilenzio, sensibilita, 0, 255);
-  intensitaLed = constrain(intensitaLed, 0, 255); // Evita valori fuori range
-
+  intensitaLed = constrain(intensitaLed, 0, 255); 
   analogWrite(ledPin, intensitaLed);
-  // 2. Mappatura del valore su 96 LED
-  // Regola il valore '400' in base alla sensibilità del microfono
+
+  // 2. Mappatura del valore su 10 LIVELLI (da 0 a 9)
+  // Invece di mappare su 96 LED, mappiamo sull'indice dell'array di disegni
+  int indiceLivello = 0;
 
 #ifdef LOGARITMIC
-// --- LOGICA LOGARITMICA ---
-  int numLedsAccesi = 0;
-  
-  if (peakToPeak > 2) { // Evitiamo log10(0) che è matematicamente indefinito
-    // Calcoliamo un valore logaritmico normalizzato
-    // log10(peakToPeak) restituirà un valore tra circa 0.3 e 3.0 (se il max è 1024)
+  if (peakToPeak > 2) { 
     logVal = log10((float)peakToPeak);
-    
-    // Mappiamo il logaritmo (da 0.5 a 2.8 ad esempio) sui 96 LED
-    // Questi estremi vanno calibrati in base al microfono
-    numLedsAccesi = map((logVal -2.2)* 3000, 0, 600, 0, 96); 
+
+  
+    indiceLivello = map((logVal - 2.2) * 3000, 0, 600, 0, 9); 
   }
 #else
-  int numLedsAccesi = map(peakToPeak, 20, 400, 0, 96);
-  numLedsAccesi = constrain(numLedsAccesi, 0, 96);
+  if (peakToPeak > sogliaSilenzio) {
+      indiceLivello = map(peakToPeak, sogliaSilenzio, sensibilita, 1, 9);
+  } else {
+      indiceLivello = 0;
+  }
 #endif
-  // 3. Riempimento della matrice
-  aggiornaMatrice(numLedsAccesi);
+
+  indiceLivello = constrain(indiceLivello, 0, 9);
+
+  aggiornaMatrice(indiceLivello);
   
   // 4. Invio del frame alla matrice
   matrix.renderBitmap(frame, 8, 12);
 
-  Serial.print("Segnale_Audio:");
-  Serial.println(logVal);
+  // Debug
+  Serial.print("Vol:");
+  Serial.print(peakToPeak);
+  Serial.print(" | Livello:");
+  Serial.println(indiceLivello);
 }
 
-void aggiornaMatrice(int ledTotali) {
-  int contatore = 0;
-  
-  // Scansione per righe e colonne
-  for (int r = 0; r < 12; r++) {
-    for (int c = 0; c < 8; c++) {
-      if (contatore < ledTotali) {
-        frame[c][r] = 1; // Accendi LED
-      } else {
-        frame[c][r] = 0; // Spegni LED
-      }
-      contatore++;
+void aggiornaMatrice(int livelloSelezionato) {
+// Scansione per righe e colonne
+  for (int r = 0; r < 8; r++) {
+    for (int c = 0; c < 12; c++) {
+      // pixel dal disegno salvato in Animazione_Albero.h al frame corrente
+      frame[r][c] = livelliAnimazione[livelloSelezionato][r][c]; 
     }
   }
 }
