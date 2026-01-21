@@ -1,0 +1,7 @@
+3.2.3 Spiegazione del Codice
+
+Per sviluppare questo codice, ci siamo basati sulla fase di campionamento.
+All'interno di una finestra temporale di 50 ms, abbiamo rilevato i valori massimi e minimi del segnale elettrico per calcolare l'ampiezza p2p (picco-picco), inoltre abbiamo inserito delle variabili per calibrare le intercettazioni ("sogliaSilenzio" e "sensibilità"), che servono per filtrare il rumore di fondo ambientale e fare in modo che i led reagiscano ai suoni effettivamente significativi.
+
+Nella seconda parte del codice, abbiamo trasformato il valore numerico del volume in un immagine dinamica. Utilizzando la funzione "map", il volume viene calcolato a partire da un indice 0 fino a 9, il quale corrisponde ai dieci livelli di animazione che ci eravamo preimpostati.
+Attraverso la funzione "aggiornaMatrice", il programma seleziona il disegno bitmap corrispondente e lo copia all'interno di un array. Infine il comando "matrix.renderBitmap" invia i dati alla matrice 8x12 creando l'immagine definitiva in cui l'albero si riempie a in modo proporzionale alle onde sonore che intercetta il sensore.
