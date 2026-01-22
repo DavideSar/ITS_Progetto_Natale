@@ -5,3 +5,117 @@ All'interno di una finestra temporale di 50 ms, abbiamo rilevato i valori massim
 
 Nella seconda parte del codice, abbiamo trasformato il valore numerico del volume in un immagine dinamica. Utilizzando la funzione "map", il volume viene calcolato a partire da un indice 0 fino a 9, il quale corrisponde ai dieci livelli di animazione che ci eravamo preimpostati.
 Attraverso la funzione "aggiornaMatrice", il programma seleziona il disegno bitmap corrispondente e lo copia all'interno di un array. Infine il comando "matrix.renderBitmap" invia i dati alla matrice 8x12 creando l'immagine definitiva in cui l'albero si riempie a in modo proporzionale alle onde sonore che intercetta il sensore.
+
+
+Codice
+
+
+#include "Arduino_LED_Matrix.h"
+#include "Animazione_Albero.h" // file con i frame
+
+ArduinoLEDMatrix matrix;
+
+//#define LOGARITMIC
+const int micPin = A0;
+const int ledPin = LED_BUILTIN;
+const int sampleWindow = 50; 
+
+// parametri di calibrazione
+int sogliaSilenzio = 50;	// valore minimo per ignorare il rumore di fondo
+int sensibilita = 200;	// soglia per raggiungere il livello massimo
+int reference = 100;		// offset rumore
+
+float logVal;
+
+// struttura per gestire il frame corrente da inviare alla matrice
+uint8_t frame[8][12]; 
+
+// array di puntatori per accedere ai disegni (0-9) definiti nel file .h
+
+const byte (*livelliAnimazione[10])[12] = {
+  disegno0, // Livello 0 (Silenzio)
+  disegno1, // Livello 1
+  disegno2, 
+  disegno3,
+  disegno4,
+  disegno5,
+  disegno6,
+  disegno7,
+  disegno8,
+  disegno9  // (Massimo volume)
+};
+
+void setup() {
+  Serial.begin(115200);
+  matrix.begin();
+  pinMode(ledPin, OUTPUT);
+}
+
+void loop() {
+  unsigned long startMillis = millis();
+  unsigned int signalMax = 0;
+  unsigned int signalMin = 1024;
+
+  // campionamento
+  while (millis() - startMillis < sampleWindow) {
+    int sample = analogRead(micPin);
+    if (sample < 1024) {
+      if (sample > signalMax) signalMax = sample;
+      else if (sample < signalMin) signalMin = sample;
+    }
+  }
+
+  // calcolo ampiezza P2P
+  int diff = (int)signalMax - (int)signalMin - reference;
+  if (diff < 0) diff = 0;
+  unsigned int peakToPeak = (unsigned int)diff;
+
+  if(peakToPeak > 5000) peakToPeak = 0;
+
+  // intensità luminosa
+  int intensitaLed = map(peakToPeak, sogliaSilenzio, sensibilita, 0, 255);
+  intensitaLed = constrain(intensitaLed, 0, 255); 
+  analogWrite(ledPin, intensitaLed);
+
+  // 2. Mappatura del valore su 10 LIVELLI (da 0 a 9)
+  // Invece di mappare su 96 LED, mappiamo sull'indice dell'array di disegni
+  int indiceLivello = 0;
+
+#ifdef LOGARITMIC
+  if (peakToPeak > 2) { 
+    logVal = log10((float)peakToPeak);
+
+  
+    indiceLivello = map((logVal - 2.2) * 3000, 0, 600, 0, 9); 
+  }
+#else
+  if (peakToPeak > sogliaSilenzio) {
+      indiceLivello = map(peakToPeak, sogliaSilenzio, sensibilita, 1, 9);
+  } else {
+      indiceLivello = 0;
+  }
+#endif
+
+  indiceLivello = constrain(indiceLivello, 0, 9);
+
+  aggiornaMatrice(indiceLivello);
+  
+  // 4. Invio del frame alla matrice
+  matrix.renderBitmap(frame, 8, 12);
+
+  // Debug
+  Serial.print("Vol:");
+  Serial.print(peakToPeak);
+  Serial.print(" | Livello:");
+  Serial.println(indiceLivello);
+}
+
+void aggiornaMatrice(int livelloSelezionato) {
+// Scansione per righe e colonne
+  for (int r = 0; r < 8; r++) {
+    for (int c = 0; c < 12; c++) {
+      // pixel dal disegno salvato in Animazione_Albero.h al frame corrente
+      frame[r][c] = livelliAnimazione[livelloSelezionato][r][c]; 
+    }
+  }
+}
